@@ -1,9 +1,10 @@
 import React from 'react'
-import { Download, Calendar } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { Card, CardHeader, CardBody, Button } from '@/components'
 import { formatCurrency, formatDate } from '@/utils/helpers'
 import { transactionService } from '@/services/api'
 import { useBusinessStore } from '@/stores'
+import jsPDF from 'jspdf'
 
 export const Reports: React.FC = () => {
   const { currentBusiness } = useBusinessStore()
@@ -12,9 +13,7 @@ export const Reports: React.FC = () => {
   const [dateRange, setDateRange] = React.useState({ start: '', end: '' })
 
   React.useEffect(() => {
-    if (currentBusiness) {
-      loadData()
-    }
+    if (currentBusiness) loadData()
   }, [currentBusiness])
 
   const loadData = async () => {
@@ -31,27 +30,136 @@ export const Reports: React.FC = () => {
     }
   }
 
-  const downloadReport = (format: 'csv' | 'pdf') => {
-    let content = ''
-    if (format === 'csv') {
-      content = 'Fecha,Tipo,Monto,Descripción\n'
-      transactions.forEach((tx) => {
-        content += `${tx.created_at},${tx.type},${tx.amount},"${tx.description || ''}"\n`
-      })
-    }
-    
+  const filteredTransactions = transactions.filter((tx) => {
+    if (!dateRange.start && !dateRange.end) return true
+    const txDate = new Date(tx.createdAt)
+    const from = dateRange.start ? new Date(dateRange.start) : null
+    const to = dateRange.end ? new Date(dateRange.end) : null
+    if (from && txDate < from) return false
+    if (to && txDate > to) return false
+    return true
+  })
+
+  const downloadCSV = () => {
+    // BOM para que Excel reconozca UTF-8
+    const BOM = '\uFEFF'
+    let content = BOM + 'Fecha,Tipo,Monto,Descripcion\n'
+    filteredTransactions.forEach((tx) => {
+      const fecha = tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('es-SV') : '-'
+      const tipo = tx.type === 'deposit' ? 'Ingreso' : 'Gasto'
+      const monto = parseFloat(tx.amount).toFixed(2)
+      const desc = (tx.description || '').replace(/"/g, '""')
+      content += `${fecha},${tipo},${monto},"${desc}"\n`
+    })
     const element = document.createElement('a')
-    element.setAttribute('href', `data:text/plain;charset=utf-8,${encodeURIComponent(content)}`)
-    element.setAttribute('download', `reporte.${format}`)
+    element.setAttribute('href', `data:text/csv;charset=utf-8,${encodeURIComponent(content)}`)
+    element.setAttribute('download', 'reporte_fintrust.csv')
     element.style.display = 'none'
     document.body.appendChild(element)
     element.click()
     document.body.removeChild(element)
   }
 
+  const downloadPDF = () => {
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+
+    // Header
+    doc.setFillColor(15, 23, 42)
+    doc.rect(0, 0, pageWidth, 30, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(20)
+    doc.setFont('helvetica', 'bold')
+    doc.text('FinTrust', 14, 15)
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text('Reporte Financiero', 14, 23)
+    doc.text(`Generado: ${new Date().toLocaleDateString('es-SV')}`, pageWidth - 14, 23, { align: 'right' })
+
+    // Nombre del negocio
+    doc.setTextColor(15, 23, 42)
+    doc.setFontSize(13)
+    doc.setFont('helvetica', 'bold')
+    doc.text(currentBusiness?.name || 'Mi Negocio', 14, 42)
+
+    // Cajas de resumen
+    const currentBalance = balance ? parseFloat(balance.current_balance) : 0
+    const totalIncome   = balance ? parseFloat(balance.total_income)    : 0
+    const totalExpenses = balance ? parseFloat(balance.total_expenses)  : 0
+
+    const boxes = [
+      { label: 'Balance Actual',   value: formatCurrency(currentBalance), color: [37, 99, 235]  },
+      { label: 'Ingresos Totales', value: formatCurrency(totalIncome),    color: [16, 185, 129] },
+      { label: 'Gastos Totales',   value: formatCurrency(totalExpenses),  color: [239, 68, 68]  },
+    ]
+    boxes.forEach((box, i) => {
+      const x = 14 + i * 62
+      doc.setFillColor(box.color[0], box.color[1], box.color[2])
+      doc.rect(x, 48, 58, 18, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'normal')
+      doc.text(box.label, x + 4, 55)
+      doc.setFont('helvetica', 'bold')
+      doc.text(box.value, x + 4, 63)
+    })
+
+    // Título tabla
+    doc.setTextColor(15, 23, 42)
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Detalle de Transacciones', 14, 80)
+
+    // Encabezado tabla
+    doc.setFillColor(15, 23, 42)
+    doc.rect(14, 84, pageWidth - 28, 8, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(8)
+    doc.text('Fecha',       16, 89)
+    doc.text('Tipo',        60, 89)
+    doc.text('Descripcion', 88, 89)
+    doc.text('Monto', pageWidth - 16, 89, { align: 'right' })
+
+    // Filas
+    let y = 96
+    filteredTransactions.slice(0, 30).forEach((tx, i) => {
+      if (i % 2 === 0) {
+        doc.setFillColor(243, 244, 246)
+        doc.rect(14, y - 4, pageWidth - 28, 8, 'F')
+      }
+      const fecha = tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('es-SV') : '-'
+      const tipo  = tx.type === 'deposit' ? 'Ingreso' : 'Gasto'
+      const desc  = (tx.description || '-').substring(0, 30)
+      const monto = `${tx.type === 'deposit' ? '+' : '-'}${formatCurrency(tx.amount)}`
+
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(55, 65, 81)
+      doc.text(fecha, 16, y)
+      doc.setTextColor(tx.type === 'deposit' ? 22 : 185, tx.type === 'deposit' ? 163 : 28, 74)
+      doc.text(tipo, 60, y)
+      doc.setTextColor(55, 65, 81)
+      doc.text(desc, 88, y)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(tx.type === 'deposit' ? 22 : 220, tx.type === 'deposit' ? 163 : 38, tx.type === 'deposit' ? 74 : 38)
+      doc.text(monto, pageWidth - 16, y, { align: 'right' })
+
+      y += 8
+      if (y > 270) { doc.addPage(); y = 20 }
+    })
+
+    // Footer
+    doc.setTextColor(156, 163, 175)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.text('FinTrust v0.1.0  ·  Universidad Dr. Jose Matias Delgado  ·  El Salvador',
+      pageWidth / 2, 290, { align: 'center' })
+
+    doc.save('reporte_fintrust.pdf')
+  }
+
   const currentBalance = balance ? parseFloat(balance.current_balance) : 0
-  const totalIncome = balance ? parseFloat(balance.total_income) : 0
-  const totalExpenses = balance ? parseFloat(balance.total_expenses) : 0
+  const totalIncome    = balance ? parseFloat(balance.total_income)    : 0
+  const totalExpenses  = balance ? parseFloat(balance.total_expenses)  : 0
 
   return (
     <div className="space-y-6">
@@ -60,7 +168,6 @@ export const Reports: React.FC = () => {
         <p className="text-gray-600 mt-1">Genera reportes detallados de tu negocio</p>
       </div>
 
-      {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <p className="text-sm text-gray-600 mb-2">Balance Actual</p>
@@ -76,7 +183,6 @@ export const Reports: React.FC = () => {
         </Card>
       </div>
 
-      {/* Report Options */}
       <Card>
         <CardHeader title="Opciones de Reporte" />
         <CardBody>
@@ -101,13 +207,12 @@ export const Reports: React.FC = () => {
                 />
               </div>
             </div>
-
             <div className="flex gap-2">
-              <Button onClick={() => downloadReport('csv')} className="flex items-center gap-2 flex-1">
+              <Button onClick={downloadCSV} className="flex items-center gap-2 flex-1">
                 <Download className="w-4 h-4" />
                 Descargar CSV
               </Button>
-              <Button onClick={() => downloadReport('pdf')} className="flex items-center gap-2 flex-1" variant="secondary">
+              <Button onClick={downloadPDF} className="flex items-center gap-2 flex-1" variant="secondary">
                 <Download className="w-4 h-4" />
                 Descargar PDF
               </Button>
@@ -116,11 +221,10 @@ export const Reports: React.FC = () => {
         </CardBody>
       </Card>
 
-      {/* Transactions Summary */}
       <Card>
         <CardHeader title="Resumen de Transacciones" />
         <CardBody>
-          {transactions.length === 0 ? (
+          {filteredTransactions.length === 0 ? (
             <p className="text-gray-500 text-center py-6">No hay transacciones</p>
           ) : (
             <div className="overflow-x-auto">
@@ -134,9 +238,11 @@ export const Reports: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.slice(0, 20).map((tx) => (
+                  {filteredTransactions.slice(0, 20).map((tx) => (
                     <tr key={tx.id} className="border-b hover:bg-gray-50">
-                      <td className="px-3 py-2">{formatDate(tx.created_at)}</td>
+                      <td className="px-3 py-2">
+                        {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString('es-SV') : '-'}
+                      </td>
                       <td className="px-3 py-2">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           tx.type === 'deposit' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
