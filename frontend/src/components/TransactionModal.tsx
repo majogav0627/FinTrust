@@ -3,7 +3,7 @@ import { Plus, Package } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import { transactionService } from '@/services/api'
-import { normalizeAmount, isValidAmount } from '@/utils/helpers'
+import { normalizeAmount } from '@/utils/helpers'
 
 interface TransactionModalProps {
   isOpen: boolean
@@ -96,13 +96,9 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     e.preventDefault()
     setError('')
 
-    if (!amount || parseFloat(amount) <= 0) {
+    const amountNum = parseFloat(amount)
+    if (!amount || isNaN(amountNum) || amountNum <= 0) {
       setError('Ingresa un monto válido')
-      return
-    }
-
-    if (!isValidAmount(amount)) {
-      setError('El monto no puede tener más de 2 decimales')
       return
     }
 
@@ -260,7 +256,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
             <input
               type="number"
               step="0.01"
-              min="0"
+              min="0.01"
+              max="999999.99"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"

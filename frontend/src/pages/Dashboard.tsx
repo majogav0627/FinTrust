@@ -24,15 +24,8 @@ export const Dashboard: React.FC = () => {
   const [alerts, setAlerts] = useState<any[]>([])
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  useEffect(() => {
-    if (!currentBusiness) return
-
-    loadData()
-    const interval = setInterval(loadData, 15000)
-    return () => clearInterval(interval)
-  }, [currentBusiness])
-
-  const loadData = async () => {
+  // Memoizar loadData para evitar recreaciones
+  const loadData = React.useCallback(async () => {
     try {
       setLoading(true)
       if (!currentBusiness) return
@@ -57,7 +50,7 @@ export const Dashboard: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentBusiness])
 
   const generateAlerts = (balanceData: any, _txData: any[], savedProducts: any[]) => {
     const generatedAlerts: any[] = []
@@ -152,6 +145,18 @@ export const Dashboard: React.FC = () => {
 
     setAlerts(generatedAlerts.slice(0, 3)) // Mostrar máximo 3 alertas
   }
+
+  useEffect(() => {
+    if (!currentBusiness) return
+
+    loadData()
+    
+    // Solo actualizar si ambos modales están cerrados
+    if (!depositModalOpen && !withdrawModalOpen) {
+      const interval = setInterval(loadData, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [currentBusiness, depositModalOpen, withdrawModalOpen, loadData])
 
   const productCount = products.length
 

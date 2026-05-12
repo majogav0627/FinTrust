@@ -12,19 +12,12 @@ export const Finances: React.FC = () => {
   const [transactions, setTransactions] = React.useState<any[]>([])
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
 
-  React.useEffect(() => {
-    if (!currentBusiness) return
-
-    loadData()
-    const interval = setInterval(loadData, 15000)
-    return () => clearInterval(interval)
-  }, [currentBusiness])
-
-  const loadData = async () => {
+  // Memoizar loadData para evitar recreaciones infinitas
+  const loadData = React.useCallback(async () => {
     try {
-      setLoading(true)
       if (!currentBusiness) return
 
+      setLoading(true)
       const [balanceData, txData] = await Promise.all([
         transactionService.getBalance(Number(currentBusiness.id)),
         transactionService.getHistory(Number(currentBusiness.id)),
@@ -32,10 +25,21 @@ export const Finances: React.FC = () => {
       setBalance(balanceData)
       setTransactions(txData)
       setLastUpdated(new Date())
+    } catch (error) {
+      console.error('Error loading finances:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentBusiness])
+
+  React.useEffect(() => {
+    if (!currentBusiness) return
+
+    loadData()
+    // Solo actualizar cada 30 segundos, no cada 15
+    const interval = setInterval(loadData, 30000)
+    return () => clearInterval(interval)
+  }, [currentBusiness, loadData])
 
   if (loading) {
     return (

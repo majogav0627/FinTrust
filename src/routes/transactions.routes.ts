@@ -5,7 +5,7 @@ import {
   getTransactionHistory,
   getBalance,
 } from "../services/transaction.service.ts";
-import { isValidAmount, normalizeAmount } from "../utils/currency.ts";
+import { normalizeAmount } from "../utils/currency.ts";
 
 const router = express.Router();
 
@@ -23,14 +23,15 @@ router.post("/deposit", async (req: Request, res: Response) => {
         .json({ error: "businessId and amount are required" });
     }
 
-    if (!isValidAmount(amount)) {
+    const normalizedAmount = normalizeAmount(amount);
+    const amountNum = parseFloat(normalizedAmount);
+
+    if (isNaN(amountNum) || amountNum <= 0) {
       return res.status(400).json({
         error: "Invalid amount",
-        message: "Amount must be a positive number with maximum 2 decimal places",
+        message: "Amount must be a positive number",
       });
     }
-
-    const normalizedAmount = normalizeAmount(amount);
 
     const transaction = await createTransaction({
       businessId: parseInt(businessId),
@@ -66,14 +67,15 @@ router.post("/withdraw", async (req: Request, res: Response) => {
         .json({ error: "businessId and amount are required" });
     }
 
-    if (!isValidAmount(amount)) {
+    const normalizedAmount = normalizeAmount(amount);
+    const amountNum = parseFloat(normalizedAmount);
+
+    if (isNaN(amountNum) || amountNum <= 0) {
       return res.status(400).json({
         error: "Invalid amount",
-        message: "Amount must be a positive number with maximum 2 decimal places",
+        message: "Amount must be a positive number",
       });
     }
-
-    const normalizedAmount = normalizeAmount(amount);
 
     const transaction = await createTransaction({
       businessId: parseInt(businessId),

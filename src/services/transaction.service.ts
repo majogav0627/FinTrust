@@ -1,6 +1,6 @@
 import { query } from "../db/connection.ts";
 import FinCoreAdapter from "../adapters/fincore/fincore-adapter.ts";
-import { normalizeAmount, isValidAmount } from "../utils/currency.ts";
+import { normalizeAmount, toCents } from "../utils/currency.ts";
 
 export interface TransactionData {
   businessId: number;
@@ -27,12 +27,11 @@ export async function createTransaction(
   data: TransactionData
 ): Promise<TransactionResponse> {
   try {
-    // Validar y normalizar el monto
-    if (!isValidAmount(data.amount)) {
-      throw new Error("Invalid amount: must be a positive number with maximum 2 decimal places");
-    }
-    
+    // Normalizar el monto a 2 decimales para DB
     const normalizedAmount = normalizeAmount(data.amount);
+
+    // Convertir a centavos (uint256) para Fin-Core
+    const amountInCents = String(toCents(data.amount));
 
     // Ejecutar la intención en FinCore
     const finCoreAdapter = new FinCoreAdapter(
@@ -44,7 +43,7 @@ export async function createTransaction(
     const fincoreResult = await finCoreAdapter.executeIntent(
       intentType,
       process.env.FINCORE_DEPLOYMENT_ID || "official-rail-v0-anvil-individual-vault",
-      { amount: normalizedAmount }
+      { amount: amountInCents }
     );
 
     // Guardar en PostgreSQL
@@ -146,19 +145,16 @@ async function updateBalance(
   type: string,
   amount: string
 ): Promise<void> {
-  // Normalizar el monto a exactamente 2 decimales
   const normalizedAmount = normalizeAmount(amount);
   const amountNum = parseFloat(normalizedAmount);
 
   try {
-    // Verificar si existe el registro de balance
     const existing = await query(
       `SELECT id FROM balances WHERE business_id = $1`,
       [businessId]
     );
 
     if (existing.rows.length === 0) {
-      // Crear nuevo balance
       const initialBalance = type === "deposit" ? amountNum : -amountNum;
       const totalIncome = type === "deposit" ? amountNum : 0;
       const totalExpenses = type === "withdrawal" ? amountNum : 0;
@@ -169,7 +165,6 @@ async function updateBalance(
         [businessId, initialBalance, totalIncome, totalExpenses]
       );
     } else {
-      // Actualizar balance existente
       if (type === "deposit") {
         await query(
           `UPDATE balances

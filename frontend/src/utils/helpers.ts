@@ -53,12 +53,15 @@ export const normalizeAmount = (amount: number | string): string => {
 }
 
 /**
- * Valida que un monto tenga máximo 2 decimales
+ * Valida que un monto tenga máximo 2 decimales y sea positivo
+ * Compatible con inputs type=number que pueden tener precisión flotante
  */
 export const isValidAmount = (amount: string | number): boolean => {
-  const str = typeof amount === 'string' ? amount : String(amount)
-  const decimalParts = str.split('.')
-  if (decimalParts.length > 2) return false
-  if (decimalParts.length === 2 && decimalParts[1].length > 2) return false
-  return !isNaN(parseFloat(str)) && parseFloat(str) > 0
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount
+  
+  if (isNaN(num) || num <= 0) return false
+  
+  // Normalizar a 2 decimales y verificar
+  const normalized = Math.round(num * 100) / 100
+  return normalized > 0
 }
