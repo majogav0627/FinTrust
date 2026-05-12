@@ -1,5 +1,6 @@
 import { query } from "../db/connection.ts";
 import FinCoreAdapter from "../adapters/fincore/fincore-adapter.ts";
+import { normalizeAmount, isValidAmount } from "../utils/currency.ts";
 
 export interface TransactionData {
   businessId: number;
@@ -26,6 +27,13 @@ export async function createTransaction(
   data: TransactionData
 ): Promise<TransactionResponse> {
   try {
+    // Validar y normalizar el monto
+    if (!isValidAmount(data.amount)) {
+      throw new Error("Invalid amount: must be a positive number with maximum 2 decimal places");
+    }
+    
+    const normalizedAmount = normalizeAmount(data.amount);
+
     // Ejecutar la intención en FinCore
     const finCoreAdapter = new FinCoreAdapter(
       process.env.FINCORE_BASE_URL!,
@@ -36,7 +44,7 @@ export async function createTransaction(
     const fincoreResult = await finCoreAdapter.executeIntent(
       intentType,
       process.env.FINCORE_DEPLOYMENT_ID || "official-rail-v0-anvil-individual-vault",
-      { amount: data.amount }
+      { amount: normalizedAmount }
     );
 
     // Guardar en PostgreSQL
@@ -47,7 +55,7 @@ export async function createTransaction(
       [
         data.businessId,
         data.type,
-        data.amount,
+        normalizedAmount,
         data.description || null,
         fincoreResult.executionId,
         fincoreResult.status,
@@ -55,7 +63,7 @@ export async function createTransaction(
     );
 
     // Actualizar saldo
-    await updateBalance(data.businessId, data.type, data.amount);
+    await updateBalance(data.businessId, data.type, normalizedAmount);
 
     const row = result.rows[0];
     return {
@@ -138,7 +146,9 @@ async function updateBalance(
   type: string,
   amount: string
 ): Promise<void> {
-  const amountNum = parseFloat(amount);
+  // Normalizar el monto a exactamente 2 decimales
+  const normalizedAmount = normalizeAmount(amount);
+  const amountNum = parseFloat(normalizedAmount);
 
   try {
     // Verificar si existe el registro de balance

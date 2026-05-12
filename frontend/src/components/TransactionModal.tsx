@@ -3,6 +3,7 @@ import { Plus, Package } from 'lucide-react'
 import { Modal } from './Modal'
 import { Button } from './Button'
 import { transactionService } from '@/services/api'
+import { normalizeAmount, isValidAmount } from '@/utils/helpers'
 
 interface TransactionModalProps {
   isOpen: boolean
@@ -73,7 +74,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   useEffect(() => {
     if (selectedProduct && soldQuantity && parseFloat(soldQuantity) > 0) {
       const total = selectedProduct.unit_price * parseFloat(soldQuantity)
-      setAmount(total.toFixed(2))
+      setAmount(normalizeAmount(total))
     }
   }, [selectedProductId, soldQuantity])
 
@@ -97,6 +98,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
     if (!amount || parseFloat(amount) <= 0) {
       setError('Ingresa un monto válido')
+      return
+    }
+
+    if (!isValidAmount(amount)) {
+      setError('El monto no puede tener más de 2 decimales')
       return
     }
 
@@ -124,15 +130,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
     try {
       setLoading(true)
-      const numAmount = parseFloat(amount) as number
+      // Normalizar el monto a exactamente 2 decimales
+      const normalizedAmount = normalizeAmount(amount)
       const description = isVenta && selectedProduct
         ? `Ventas - ${selectedProduct.name} (x${soldQuantity})`
         : category
 
       if (type === 'deposit') {
-        await transactionService.deposit(businessId, String(numAmount), description)
+        await transactionService.deposit(businessId, normalizedAmount, description)
       } else {
-        await transactionService.withdraw(businessId, String(numAmount), description)
+        await transactionService.withdraw(businessId, normalizedAmount, description)
       }
 
       // Descontar del inventario si es una venta
